@@ -28,7 +28,10 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
 
 shared_song_info = {
     "playing": None,
-    "album_cover": None
+    "album_cover": None,
+    "rotated_angles_cache": [],
+    "rotated_covers_cache": [],
+    "last_album_cover_url": None
 }
 
 lock = threading.Lock()
@@ -40,25 +43,30 @@ def spotify_api_grabber(sp):
         current = sp.current_playback()
         if current and current['item']:
             if current['device']['name'] == "Salon":
-                response = requests.get(current['item']['album']['images'][0]['url'])
-                img = Image.open(BytesIO(response.content))
-                img = img.convert("RGB")
-                img_ratio = img.width / img.height
-                screen_ratio = screen_width / screen_height
-                if img_ratio > screen_ratio:
-                    new_width = screen_width
-                    new_height = int(screen_width / img_ratio)
-                else:
-                    new_height = screen_height
-                    new_width = int(screen_height * img_ratio)
-                img = img.resize((new_width, new_height), Image.LANCZOS)
-                mode = img.mode
-                size = img.size
-                data = img.tobytes()
-                album_cover = pygame.image.fromstring(data, size, mode)
+                album_cover_url = current['item']['album']['images'][0]['url']
                 with lock:
                     shared_song_info["playing"] = current['is_playing']
-                    shared_song_info["album_cover"] = album_cover
+                    if shared_song_info["last_album_cover_url"] != album_cover_url:
+                        response = requests.get(album_cover_url)
+                        img = Image.open(BytesIO(response.content))
+                        img = img.convert("RGB")
+                        img_ratio = img.width / img.height
+                        screen_ratio = screen_width / screen_height
+                        if img_ratio > screen_ratio:
+                            new_width = screen_width
+                            new_height = int(screen_width / img_ratio)
+                        else:
+                            new_height = screen_height
+                            new_width = int(screen_height * img_ratio)
+                        img = img.resize((new_width, new_height), Image.LANCZOS)
+                        mode = img.mode
+                        size = img.size
+                        data = img.tobytes()
+                        album_cover = pygame.image.fromstring(data, size, mode)
+                        shared_song_info["album_cover"] = album_cover
+                        shared_song_info["last_album_cover_url"] = album_cover_url
+                        shared_song_info["rotated_angles_cache"] = []
+                        shared_song_info["rotated_covers_cache"] = []
         else:
             with lock:
                 shared_song_info["playing"] = None
@@ -70,9 +78,15 @@ screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
 clock = pygame.time.Clock()
 screen_width, screen_height = screen.get_size()
 
-def display_album_cover(album_cover, angle=0):
-    screen.fill((0, 0, 0))
-    rotated_surface = pygame.transform.rotate(album_cover, angle)
+def display_album_cover(album_cover, angle):
+    angle = angle % 360
+    with lock:
+        rotated_angles_cache = shared_song_info["rotated_angles_cache"]
+        rotated_covers_cache = shared_song_info["rotated_covers_cache"]
+    if angle not in rotated_angles_cache:
+        rotated_covers_cache.append(pygame.transform.rotate(album_cover, angle))
+        rotated_angles_cache.append(angle)
+    rotated_surface = rotated_covers_cache[rotated_angles_cache.index(angle)]
     rect = rotated_surface.get_rect(center=(screen_width // 2, screen_height // 2))
     screen.blit(rotated_surface, rect)
 
@@ -80,6 +94,15 @@ thread = threading.Thread(target=spotify_api_grabber, args=(sp,))
 thread.start()
 
 angle = 0
+
+mask = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
+mask.fill((0, 0, 0, 255))
+pygame.draw.circle(
+    mask,
+    (0, 0, 0, 0),  # Fully transparent
+    (screen_width // 2, screen_height // 2),
+    screen_height // 2
+)
 
 while running:
     for event in pygame.event.get():
@@ -99,22 +122,13 @@ while running:
         display_album_cover(album_cover, angle)
     else:
         screen.fill((0, 0, 0))
-        pygame.display.flip()
         angle = 0
-    mask = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
-    mask.fill((0, 0, 0, 255))
-    pygame.draw.circle(
-        mask,
-        (0, 0, 0, 0),  # Fully transparent
-        (screen_width // 2, screen_height // 2),
-        screen_height // 2
-    )
     screen.blit(mask, (0, 0))
     pygame.draw.circle(
         screen,
         (0, 0, 0),
         (screen_width // 2, screen_height // 2),
-        30,
+        20,
     )
     pygame.display.flip()
     clock.tick(60)
