@@ -37,41 +37,58 @@ shared_song_info = {
 lock = threading.Lock()
 running = True
 
+polling_interval = 1
+
 def spotify_api_grabber(sp):
     global running
     while running:
-        current = sp.current_playback()
-        if current and current['item']:
-            if current['device']['name'] == "Salon":
-                album_cover_url = current['item']['album']['images'][0]['url']
+        try:
+            current = sp.current_playback()
+            if current and current['item']:
+                if current['device']['name'] == "Salon":
+                    album_cover_url = current['item']['album']['images'][0]['url']
+                    duration_ms = current['item']['duration_ms']
+                    progress_ms = current['progress_ms']
+                    with lock:
+                        shared_song_info["playing"] = current['is_playing']
+                        if shared_song_info["last_album_cover_url"] != album_cover_url:
+                            response = requests.get(album_cover_url)
+                            img = Image.open(BytesIO(response.content))
+                            img = img.convert("RGB")
+                            img_ratio = img.width / img.height
+                            screen_ratio = screen_width / screen_height
+                            if img_ratio > screen_ratio:
+                                new_width = screen_width
+                                new_height = int(screen_width / img_ratio)
+                            else:
+                                new_height = screen_height
+                                new_width = int(screen_height * img_ratio)
+                            img = img.resize((new_width, new_height), Image.LANCZOS)
+                            mode = img.mode
+                            size = img.size
+                            data = img.tobytes()
+                            album_cover = pygame.image.fromstring(data, size, mode)
+                            shared_song_info["album_cover"] = album_cover
+                            shared_song_info["last_album_cover_url"] = album_cover_url
+                            shared_song_info["rotated_angles_cache"] = []
+                            shared_song_info["rotated_covers_cache"] = []
+            else:
                 with lock:
-                    shared_song_info["playing"] = current['is_playing']
-                    if shared_song_info["last_album_cover_url"] != album_cover_url:
-                        response = requests.get(album_cover_url)
-                        img = Image.open(BytesIO(response.content))
-                        img = img.convert("RGB")
-                        img_ratio = img.width / img.height
-                        screen_ratio = screen_width / screen_height
-                        if img_ratio > screen_ratio:
-                            new_width = screen_width
-                            new_height = int(screen_width / img_ratio)
-                        else:
-                            new_height = screen_height
-                            new_width = int(screen_height * img_ratio)
-                        img = img.resize((new_width, new_height), Image.LANCZOS)
-                        mode = img.mode
-                        size = img.size
-                        data = img.tobytes()
-                        album_cover = pygame.image.fromstring(data, size, mode)
-                        shared_song_info["album_cover"] = album_cover
-                        shared_song_info["last_album_cover_url"] = album_cover_url
-                        shared_song_info["rotated_angles_cache"] = []
-                        shared_song_info["rotated_covers_cache"] = []
-        else:
-            with lock:
-                shared_song_info["playing"] = None
-                shared_song_info["album_cover"] = None
-        time.sleep(0.1)
+                    shared_song_info["playing"] = None
+                    shared_song_info["album_cover"] = None
+            if shared_song_info["playing"] == None:
+                polling_interval = 3
+            else:
+                if shared_song_info["playing"] == True and duration_ms - progress_ms < 5000:
+                    polling_interval = 0.1
+
+            time.sleep(polling_interval)
+
+        except Exception as error:
+            if error.http_status == 429:
+                retry_after = int(error.headers.get('Retry-After', 5))
+                print(f"Rate limited by Spotify API. Retrying after {retry_after} seconds.")
+                time.sleep(retry_after)
 
 pygame.init()
 screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
