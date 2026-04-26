@@ -7,6 +7,8 @@ from io import BytesIO
 from PIL import Image
 import time
 
+time.sleep(10)
+
 secrets = {}
 with open("id.txt", "r") as file:
     for line in file:
@@ -72,20 +74,21 @@ def spotify_api_grabber(sp):
                             shared_song_info["last_album_cover_url"] = album_cover_url
                             shared_song_info["rotated_angles_cache"] = []
                             shared_song_info["rotated_covers_cache"] = []
+                        if shared_song_info["playing"] == True and duration_ms - progress_ms < 5000:
+                            polling_interval = 0.1
+                        else:
+                            polling_interval = 1
+
             else:
                 with lock:
                     shared_song_info["playing"] = None
                     shared_song_info["album_cover"] = None
-            if shared_song_info["playing"] == None:
                 polling_interval = 3
-            else:
-                if shared_song_info["playing"] == True and duration_ms - progress_ms < 5000:
-                    polling_interval = 0.1
 
             time.sleep(polling_interval)
 
         except Exception as error:
-            if error.http_status == 429:
+            if hasattr(error, 'http_status') and error.http_status == 429:
                 retry_after = int(error.headers.get('Retry-After', 5))
                 print(f"Rate limited by Spotify API. Retrying after {retry_after} seconds.")
                 time.sleep(retry_after)
