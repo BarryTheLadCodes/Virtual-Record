@@ -26,7 +26,8 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
     client_secret=CLIENT_SECRET,
     redirect_uri=REDIRECT_URI,
     scope=SCOPE,
-    cache_path="/.spotify_cache"
+    cache_path=".cache",
+    open_browser=True
 ))
 
 shared_song_info = {
