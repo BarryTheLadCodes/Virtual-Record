@@ -25,7 +25,8 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
     client_id=CLIENT_ID,
     client_secret=CLIENT_SECRET,
     redirect_uri=REDIRECT_URI,
-    scope=SCOPE
+    scope=SCOPE,
+    cache_path="/.spotify_cache"
 ))
 
 shared_song_info = {
@@ -43,6 +44,7 @@ polling_interval = 1
 
 def spotify_api_grabber(sp):
     global running
+    print("Starting Spotify API grabber thread...")
     while running:
         try:
             current = sp.current_playback()
